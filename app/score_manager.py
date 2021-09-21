@@ -3,11 +3,10 @@ import music21
 from app.phrase_collections import PhraseCollections
 
 class ScoreManager:
-    def __init__(self, countries_to_output, instruments, orchestration_mapper, fp):
-        self.countries_to_output = countries_to_output
+    def __init__(self, instruments, orchestration_mapper, fp):
         self.instruments = instruments
         self.orchestration_mapper = orchestration_mapper
-        self.scores = self.initialise_scores()
+        self.score = self.initialise_score()
         self.phrase_collections = PhraseCollections()
         self.articulations = {
             'stac': music21.articulations.Staccato(),
@@ -15,39 +14,39 @@ class ScoreManager:
         }
         self.fp = fp
 
-    def initialise_scores(self):
-        scores = {}
-        for prefix, country in zip(['I', 'II', 'III', 'IV'], self.countries_to_output):
-            score = music21.stream.Score()
-            score.insert(0, music21.metadata.Metadata())
-            score.metadata.movementName = 'Coronavirus data\n{}. {}'.format(prefix, country)
-            score.metadata.composer = 'Ed Lowther'
-            scores[country] = score
-            for instrument in self.instruments:
-                s = music21.stream.Part()
-                s.partName = instrument.name
-                s.partAbbreviation = instrument.abbr
-                s.append(music21.meter.TimeSignature('4/4'))
-                s.keySignature = music21.key.Key('D', 'minor')
-                s.previous_dynamic = None
-                score.insert(0, s)
-        return scores
+    def initialise_score(self):
+        score = music21.stream.Score()
+        score.insert(0, music21.metadata.Metadata())
+        score.metadata.movementName = 'Coronavirus data by\nvaccination status'
+        score.metadata.composer = 'Ed Lowther'
+        for instrument in self.instruments:
+            s = music21.stream.Part()
+            s.partName = instrument.name
+            s.partAbbreviation = instrument.abbr
+            s.append(music21.meter.TimeSignature('4/4'))
+            s.keySignature = music21.key.Key('D', 'minor')
+            s.previous_dynamic = None
+            score.insert(0, s)
+        return score
 
-    def add_bar(self, country, dynamic, clip):
-        if dynamic:
-            score = self.scores[country]
+    def add_bar(self, vaccination_status, dynamic, clip):
+        if dynamic == 'bar_of_rest':
+            instruments_to_orchestrate = []
+            phrase_collection = None
+        else:
             instruments_to_orchestrate = self.orchestration_mapper[dynamic]
             phrase_collection = self.phrase_collections.lookup[dynamic]
-            for instrument in self.instruments:
-                part = self.get_part_from_score(score, instrument)
-                if instrument.abbr in instruments_to_orchestrate:
-                    self.handle_dynamic_annotation(part, dynamic)
-                    phrase = phrase_collection.phrases[instrument.phrase_idx]
-                    for source_note_idx, source_note in enumerate(phrase.notes):
-                        self.add_note_to_part(source_note_idx, source_note, part, phrase, clip)
-                else:
-                    bar_of_rest = music21.note.Rest(duration = music21.duration.Duration(4))
-                    part.append(bar_of_rest)
+        for instrument in [instrument for instrument in self.instruments if instrument.vaccination_status == vaccination_status]:
+            part = self.get_part_from_score(self.score, instrument)
+            # print(vaccination_status, dynamic, instruments_to_orchestrate)
+            if instrument.abbr in instruments_to_orchestrate:
+                self.handle_dynamic_annotation(part, dynamic)
+                phrase = phrase_collection.phrases[instrument.phrase_idx]
+                for source_note_idx, source_note in enumerate(phrase.notes):
+                    self.add_note_to_part(source_note_idx, source_note, part, phrase, clip)
+            else:
+                bar_of_rest = music21.note.Rest(duration = music21.duration.Duration(4))
+                part.append(bar_of_rest)
 
     def get_part_from_score(self, score, instrument):
         return [_ for _ in score.parts if _.partAbbreviation == instrument.abbr][0]
@@ -86,5 +85,4 @@ class ScoreManager:
             pass
 
     def write(self):
-        for country, score in self.scores.items():
-            score.write(fmt = 'musicxml', fp = self.fp.format(country.replace(' ', '_')).lower())
+        self.score.write(fmt = 'musicxml', fp = self.fp)
